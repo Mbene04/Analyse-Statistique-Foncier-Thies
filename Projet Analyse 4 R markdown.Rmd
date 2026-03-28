@@ -1,0 +1,246 @@
+---
+title: "Projet Analyse 4"
+author: "Mbene Kebe"
+date: "2026-01-22"
+output: word_document
+---
+
+
+Introduction
+
+Ce projet porte sur l’analyse statistique d’une base de données foncières de la ville de Thiès. L’objectif est de réaliser une analyse exploratoire des données, d’étudier les corrélations entre variables quantitatives et de mettre en œuvre une Analyse en Composantes Principales (ACP) afin de résumer l’information et d’interpréter les structures sous-jacentes.
+
+Dans un contexte où la gestion foncière constitue un enjeu majeur pour l’aménagement urbain et la planification territoriale, cette étude vise à mettre en évidence les facteurs qui influencent la valorisation des parcelles, leur accessibilité, leur niveau d’équipement et leur exposition aux risques. Elle fournit ainsi une lecture synthétique des dynamiques foncières locales et constitue un outil pertinent pour éclairer les décisions en matière de développement urbain.
+A) Importation et prise en main des données
+```{r}
+#Chargement des packages
+library(dplyr)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+```
+
+```{r}
+#1. Importer le fichier Excel
+df <- read.csv(file.choose(), stringsAsFactors = TRUE)
+```
+
+```{r}
+#2. Afficher
+dim(df)
+glimpse(df)
+head(df)
+```
+ commentaire:On observe une vingtaine de quartiers distincts et trois grandes zones urbaines (centre, périurbain, rural/périphérie), ce qui permet de comparer des contextes fonciers variés.
+```{r}
+#3. Vérifier l’absence de valeurs manquantes
+sum(is.na(df))
+colSums(is.na(df))
+
+```
+Aucune valeur manquante n’est détectée dans la base. Les données sont donc complètes et directement exploitables pour l’analyse statistique et l’ACP.
+```{r}
+#4. Quartiers et zones urbaines
+n_distinct(df$Quartier)
+n_distinct(df$Zone_urbaine)
+```
+Commentaire :
+La base couvre plusieurs quartiers et différentes zones urbaines (centre urbain, périurbain, rural/périphérie), ce qui garantit une bonne diversité spatiale.
+
+B) Identification des variables
+```{r}
+# 5.1/Variables qualitatives
+vars_quali <- df %>% select(where(is.factor))
+names(vars_quali)
+
+```
+
+```{r}
+#5.2/Variables quantitatives
+vars_quanti <- df %>% select(where(is.numeric))
+names(vars_quanti)
+
+```
+
+```{r}
+#6/Variables actives pour l’ACP (10)
+vars_actives <- df[, c(
+  "Surface_m2",
+  "Distance_centre_km",
+  "Distance_route_principale_km",
+  "Couverture_electricite_.",
+  "Couverture_eau_.",
+  "Couverture_assainissement_.",
+  "Couverture_internet_.",
+  "Risque_inondation_0_100",
+  "Risque_litige_0_100",
+  "Prix_m2_FCFA"
+)]
+```
+Justification :
+Ces variables résument la taille, l’accessibilité, les équipements, les risques et la valeur foncière, éléments centraux pour l’attractivité des parcelles.
+
+C) Analyse descriptive (EDA)
+```{r}
+ #Statistiques descriptives
+vars_actives %>%
+  summarise_all(list(
+    min = min,
+    max = max,
+    mean = mean,
+    sd = sd
+  ))
+```
+Commentaire :
+Les prix et surfaces montrent une forte dispersion, traduisant une hétérogénéité du marché foncier. Les risques varient fortement selon les parcelles.
+
+```{r}
+#8/Graphiques
+#Histogrammes
+ggplot(df, aes(Prix_m2_FCFA)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  labs(title = "Distribution du prix au m²")
+
+ggplot(df, aes(Surface_m2)) +
+  geom_histogram(bins = 30, fill = "darkgreen") +
+  labs(title = "Distribution des surfaces")
+#Boxplots
+ggplot(df, aes(Zone_urbaine, Prix_m2_FCFA)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Prix au m² selon la zone urbaine")
+ggplot(df, aes(Titre_foncier, Risque_litige_0_100)) +
+  geom_boxplot(fill = "red") +
+  labs(title = "Risque de litige selon le titre foncier")
+
+```
+
+Commentaire :
+L’analyse descriptive met en évidence une forte hétérogénéité des caractéristiques foncières.
+La distribution du prix au m² est étalée et légèrement asymétrique, traduisant l’existence de parcelles à faible valeur et d’autres fortement valorisées, ce qui reflète un marché foncier contrasté.
+
+La distribution des surfaces montre une majorité de parcelles de taille moyenne, avec quelques grandes surfaces plus rares, indiquant une dispersion importante des superficies.
+
+Le boxplot du prix au m² selon la zone urbaine révèle une différenciation spatiale nette : les parcelles situées en centre urbain présentent les prix les plus élevés, suivies des zones périurbaines, tandis que les zones rurales/périphériques affichent les valeurs les plus faibles.
+
+Enfin, le boxplot du risque de litige selon le titre foncier montre que les parcelles sans titre foncier présentent un risque de litige globalement plus élevé et plus dispersé que celles disposant d’un titre foncier, ce qui confirme le rôle protecteur du titre foncier dans la sécurisation des parcelles.
+```{r}
+#Graphique en barres (proportion)
+ggplot(df, aes(Statut_regularisation)) +
+  geom_bar(aes(y = ..prop.., group = 1), fill = "purple") +
+  labs(y = "Proportion", title = "Statut de régularisation")
+```
+Commentaire:
+Le graphique montre que la majorité des parcelles sont régularisées, ce qui indique une avancée notable dans le processus de sécurisation foncière. Cependant, une part significative reste en cours de régularisation ou non régularisée, ce qui souligne des disparités dans l’accès au titre foncier.
+
+D) Corrélations
+```{r}
+#9.Construire la matrice de corrélation 
+mat_cor <- cor(vars_actives)
+#10.corrplot(mat_cor, type = "upper", order = "hclust", tl.cex = 0.7)
+
+```
+11/Interprétation:
+L’analyse des corrélations met en évidence plusieurs relations fortes entre les variables quantitatives :
+
+Corrélation positive attendue : le prix total est fortement lié à la surface, ce qui est logique car une parcelle plus grande entraîne mécaniquement un coût global plus élevé.
+
+Corrélation négative attendue : la distance au centre urbain est inversement corrélée au prix au m², confirmant que l’accessibilité et la centralité sont des facteurs déterminants de la valorisation foncière.
+
+Redondance : certaines variables comme le prix total et la surface véhiculent une information très proche, ce qui justifie de ne pas les inclure simultanément dans l’ACP afin d’éviter une surreprésentation.
+
+E) Réalisation de l’ACP
+```{r}
+#12.Centrage_reduction
+res_acp <- PCA(vars_actives, scale.unit = TRUE, graph = FALSE)
+#13.Valeurs propres+scree plot
+fviz_eig(res_acp, addlabels = TRUE)
+
+```
+Commentaire:
+Le scree plot montre que les deux premières dimensions expliquent à elles seules plus de 60 % de la variance totale (Dim1 : 44.8 %, Dim2 : 18.3 %). Le coude observé après la deuxième dimension indique une rupture nette dans la contribution des axes suivants. Cela justifie la conservation des deux premiers axes pour l’interprétation, car ils résument l’essentiel de l’information contenue dans les variables actives.
+
+14/Choix des axes :
+Les deux premiers axes expliquent une part importante de la variance cumulée superieur 60%. Le coude du scree plot confirme ce choix.
+
+F) Interprétation des variables
+```{r}
+#15.Cercle de des corrélations
+fviz_pca_var(res_acp, col.var = "cos2")
+fviz_pca_var(res_acp, col.var = "contrib")
+
+```
+Commentaire:
+Le cercle des corrélations montre que plusieurs variables sont bien représentées sur les deux premiers axes, avec des contributions élevées. Les variables comme Prix_m2_FCFA, Distance_centre_km, Surface_m2 et Couverture_electricite_% sont fortement corrélées à Dim1, ce qui indique qu’elles structurent l’axe autour de l’accessibilité et de la valorisation foncière.
+Les variables Risque_inondation_0_100 et Risque_litige_0_100 sont davantage liées à Dim2, traduisant un axe centré sur les risques et la sécurité foncière. La qualité de représentation (cos²) est globalement bonne pour les variables principales.
+
+#16. Donner un titre/interprétation à Dim1
+Dim1 – Accessibilité et valorisation foncière  
+Ce premier axe regroupe les variables liées à la localisation (distance au centre, distance aux infrastructures) et à la valorisation (prix au m², couverture en services). Il traduit un gradient d’accessibilité et d’équipements, opposant les parcelles bien desservies et valorisées à celles plus enclavées et moins équipées.
+#17.Donner un titre/interprétation à Dim2
+Dim2 – Risques et sécurité foncière  
+Le deuxième axe est structuré par les variables de risque (inondation, litige) et de régularisation. Il reflète un niveau de vulnérabilité juridique et environnementale, opposant les parcelles sécurisées et régularisées à celles exposées aux risques et sans titre foncier.
+
+
+```{r}
+#18.le Top 8 des contributions sur Dim1 et Dim219.
+fviz_contrib(res_acp, choice = "var", axes = 1, top = 8)
+fviz_contrib(res_acp, choice = "var", axes = 2, top = 8)
+
+```
+Commentaire:
+Dim1 – Accessibilité et valorisation  
+Cette dimension regroupe les variables liées à la localisation (distance au centre, distance aux infrastructures) et à la couverture en services (électricité, eau, internet). Elle traduit un axe d’accessibilité et d’équipements, où les parcelles bien desservies et proches du centre présentent une forte valorisation foncière.
+
+Dim2 – Risques et sécurité foncière  
+Ce deuxième axe est structuré par les variables de risque (inondation, litige) et de régularisation. Il oppose les parcelles sécurisées et régularisées à celles exposées aux risques et sans titre foncier, traduisant un niveau de vulnérabilité juridique et environnementale.
+G) Interprétation des individus
+
+```{r}
+#19.Le nuage des individus coloré par cos² puis par contribution
+fviz_pca_ind(res_acp, col.ind = "cos2")
+fviz_pca_ind(res_acp, col.ind = "contrib")
+```
+
+Commentaire:
+Les variables qui contribuent le plus à Dim1 sont principalement liées à l’accessibilité et à la valorisation foncière : Prix_m2_FCFA, Distance_centre_km, Surface_m2, Couverture_electricite_%, Couverture_eau_%, Distance_route_principale_km, Distance_marche_km, et Score_attractivite_0_100. Ces variables structurent un axe opposant les parcelles bien desservies et valorisées à celles plus enclavées.
+
+Pour Dim2, les variables les plus contributives sont Risque_inondation_0_100, Risque_litige_0_100, Titre_foncier, Statut_regularisation, Conformite_urbanisme_0_100, Couverture_assainissement_%, Zone_urbaine, et Distance_sante_km. Elles traduisent un axe centré sur la sécurité foncière et les risques, opposant les parcelles régularisées et conformes à celles exposées aux litiges et aux aléas.
+```{r}
+#20.Parcelles atypiques
+df$ID_parcelle[order(rowSums(res_acp$ind$cos2), decreasing = TRUE)][1:3]
+```
+
+```{r}
+#21.Biplot filtré
+fviz_pca_biplot(res_acp, 
+                select.ind = list(cos2 = 0.5),
+                repel = TRUE)
+```
+
+
+
+Commentaire :
+Le biplot filtré met en évidence les individus et variables les mieux représentés sur les deux premiers axes. On observe que les parcelles bien équipées, proches du centre et disposant d’un titre foncier se regroupent du côté positif de Dim1, traduisant une forte attractivité foncière. À l’inverse, les parcelles exposées aux risques ou non régularisées apparaissent plus dispersées, souvent du côté négatif de Dim2.
+Ce graphique permet de visualiser les profils contrastés des parcelles et de confirmer les axes d’interprétation : accessibilité et valorisation pour Dim1, sécurité foncière pour Dim2.
+
+```{r}
+#22.Variable qualitative supplémentaire
+fviz_pca_ind(res_acp, habillage = df$Zone_urbaine, addEllipses = TRUE)
+
+```
+
+Commentaire :
+Le nuage des individus montre une structuration spatiale claire des parcelles selon leur zone urbaine. Les parcelles du centre urbain se regroupent du côté positif de Dim1, traduisant une forte accessibilité et une bonne couverture en services. Les parcelles périurbaines occupent une position intermédiaire, tandis que celles de la zone rurale/périphérique sont plus dispersées et tendent vers le côté négatif de Dim1, indiquant un moindre niveau d’équipement et de valorisation.
+
+Cette répartition confirme que la localisation influence fortement les caractéristiques foncières et la position des parcelles dans l’espace factoriel.
+
+Conclusion générale
+Cette étude a permis d’analyser les caractéristiques foncières de la ville de Thiès à travers une approche combinant analyse descriptive et Analyse en Composantes Principales (ACP). Les résultats révèlent une forte hétérogénéité spatiale, opposant des parcelles centrales, bien équipées et fortement valorisées à des parcelles périphériques, moins dotées en infrastructures et davantage exposées aux risques juridiques et environnementaux.
+
+L’ACP a facilité la synthèse de l’information en axes interprétables, mettant en évidence les liens entre accessibilité, équipements, risques et valeur foncière. Ces résultats constituent un outil pertinent d’aide à la décision pour l’aménagement urbain et la gestion foncière, en orientant les politiques vers une meilleure sécurisation et valorisation des parcelles.
+
+Enfin, cette démarche ouvre la voie à des analyses complémentaires, notamment l’intégration de données socio-économiques ou environnementales, afin d’affiner la compréhension des dynamiques foncières et de renforcer la planification urbaine durable.
+
+```
+
+
